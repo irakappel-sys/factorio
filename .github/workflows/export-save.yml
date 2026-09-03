@@ -1,4 +1,4 @@
-name: Export Factorio save
+name: Export and analyze Factorio save
 
 on:
   push:
@@ -10,19 +10,20 @@ permissions:
   contents: read
 
 jobs:
-  export:
+  analyze:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Verify save exists
+      - name: Verify save archive
         run: |
           set -euo pipefail
           test -f _save1.zip
           unzip -t _save1.zip
 
-      - name: Upload Factorio save
+      - name: Upload raw Factorio save
         uses: actions/upload-artifact@v4
         with:
           name: factorio-save
@@ -30,3 +31,53 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+
+      - name: Download Factorio headless
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://factorio.com/get-download/stable/headless/linux64 \
+            --output factorio.tar.xz
+          tar -xJf factorio.tar.xz
+          ./factorio/bin/x64/factorio --version
+
+      - name: Install analyzer mod
+        run: |
+          set -euo pipefail
+          mkdir -p factorio/mods
+          rm -rf factorio/mods/factory_analyzer_1.0.0
+          cp -a factory_analyzer factorio/mods/factory_analyzer_1.0.0
+          cat > factorio/mods/mod-list.json <<'JSON'
+          {
+            "mods": [
+              {"name": "base", "enabled": true},
+              {"name": "factory_analyzer", "enabled": true}
+            ]
+          }
+          JSON
+
+      - name: Load save and collect factory data
+        run: |
+          set -euo pipefail
+          rm -rf factorio/script-output
+          mkdir -p factorio/script-output
+          ./factorio/bin/x64/factorio \
+            --benchmark "$GITHUB_WORKSPACE/_save1.zip" \
+            --benchmark-ticks 3 \
+            --benchmark-runs 1
+          echo '--- script-output ---'
+          find factorio/script-output -maxdepth 2 -type f -printf '%p %s bytes\n'
+          test -f factorio/script-output/factory-analysis.json
+          test -f factorio/script-output/factory-summary.txt
+
+      - name: Upload analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: factorio-analysis
+          path: |
+            factorio/script-output/factory-analysis.json
+            factorio/script-output/factory-summary.txt
+            factorio/script-output/factory-analysis-error.txt
+          if-no-files-found: warn
+          retention-days: 1
+          compression-level: 6
