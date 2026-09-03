@@ -46,11 +46,16 @@ jobs:
           set -euo pipefail
           mkdir -p factorio/mods
           rm -rf factorio/mods/factory_analyzer_1.0.0
+          sed 's/game\.write_file/helpers.write_file/g' factory_analyzer/control.lua > /tmp/control.lua
           cp -a factory_analyzer factorio/mods/factory_analyzer_1.0.0
+          cp /tmp/control.lua factorio/mods/factory_analyzer_1.0.0/control.lua
           cat > factorio/mods/mod-list.json <<'JSON'
           {
             "mods": [
               {"name": "base", "enabled": true},
+              {"name": "elevated-rails", "enabled": false},
+              {"name": "quality", "enabled": false},
+              {"name": "space-age", "enabled": false},
               {"name": "factory_analyzer", "enabled": true}
             ]
           }
@@ -71,6 +76,7 @@ jobs:
           test -f factorio/script-output/factory-summary.txt
 
       - name: Upload analysis
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: factorio-analysis
